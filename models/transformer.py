@@ -137,7 +137,7 @@ class Transformer(nn.Module):
                 dim=1
             )
 
-        t = token_embeddings.shape[1]
+        t = token_embeddings.shape[1]  # t is overwritten, to have the same interface as autoregressive sampler
         assert t <= self.block_size, "Cannot forward, model block size is exhausted."
         # each position maps to a (learnable) vector
 

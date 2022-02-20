@@ -4,7 +4,13 @@ import os
 import torch
 import torchvision
 import visdom
-
+from copy import deepcopy
+import sys
+from datetime import datetime
+from pathlib import Path
+import shutil
+import pdb
+st = pdb.set_trace
 
 def config_log(log_dir, filename="log.txt"):
     log_dir = "logs/" + log_dir
@@ -16,9 +22,10 @@ def config_log(log_dir, filename="log.txt"):
     )
 
 
-def log(output):
+def log(output, flush=True):
     logging.info(output)
-    print(output)
+    if flush:
+        print(output)
 
 
 def log_stats(step, stats):
@@ -126,3 +133,68 @@ def set_up_visdom(H):
         log_str = "Failed to set up visdom server - aborting"
         log(log_str, level="error")
         raise RuntimeError(log_str)
+
+
+def set_up_wandb(H):
+    try:
+        import wandb
+        run = wandb.init(
+            project=H.wandb_project,
+            name=H.log_dir,
+            # entity=H.wandb_entity,
+            config=H,
+        )
+        return wandb
+    except Exception:
+        log_str = "Failed to set up wandb - aborting"
+        log(log_str, level="error")
+        raise RuntimeError(log_str)
+
+
+def print_args(parser, args, is_dict=False):
+    # args = deepcopy(args)
+    if not is_dict and hasattr(args, 'parser'):
+        delattr(args, 'parser')
+    message = f"Name: {getattr(args, 'name', 'NA')} Time: {datetime.now()}\n"
+    message += '--------------- Arguments ---------------\n'
+    args_vars = args if is_dict else vars(args)
+    for k, v in sorted(args_vars.items()):
+        comment = ''
+        default = None if parser is None else parser.get_default(k)
+        if v != default:
+            comment = '\t[default: %s]' % str(default)
+        message += '{:>25}: {:<30}{}\n'.format(str(k), str(v), comment)
+    message += '------------------ End ------------------'
+    # print(message)  # suppress messages to std out
+
+    # save to the disk
+    log_dir = Path("logs/" + args.log_dir)
+    os.makedirs(log_dir, exist_ok=True)
+    file_name = log_dir / 'args.txt'
+    with open(file_name, 'a+') as f:
+        f.write(message)
+        f.write('\n\n')
+
+    # save command to disk
+    file_name = log_dir / 'cmd.txt'
+    with open(file_name, 'a+') as f:
+        f.write(f'Time: {datetime.now()}\n')
+        if os.getenv('CUDA_VISIBLE_DEVICES'):
+            f.write('CUDA_VISIBLE_DEVICES=%s ' % os.getenv('CUDA_VISIBLE_DEVICES'))
+        f.write('deepspeed ' if getattr(args, 'deepspeed', False) else 'python3 ')
+        f.write(' '.join(sys.argv))
+        f.write('\n\n')
+
+    # backup train code
+    shutil.copyfile(sys.argv[0], log_dir / f'{os.path.basename(sys.argv[0])}.txt')
+
+
+def seed_everything(seed=42):
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False  # conflict with DDP

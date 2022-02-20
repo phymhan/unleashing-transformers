@@ -9,3 +9,8 @@ latents/
 _cache_ReposdatasetsLSUNchurchoutdoortrainlmdb
 *_cache_*
 _pkl_files/
+_cache_*
+*/__pycache__
+data
+wandb
+pretrained

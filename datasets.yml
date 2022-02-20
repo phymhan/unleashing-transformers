@@ -1,6 +1,6 @@
 - dataset: churches
-  path: "/datasets/lsun"
+  path: "/research/cbim/vast/lh599/data/lsun"
 - dataset: bedrooms
-  path: "/datasets/lsun"
+  path: "/research/cbim/vast/lh599/data/lsun"
 - dataset: ffhq
-  path: "/datasets/FFHQ"
+  path: "/research/cbim/medical/lh599/data/ffhq/images1024x1024"
