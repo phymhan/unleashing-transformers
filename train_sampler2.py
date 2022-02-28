@@ -209,11 +209,12 @@ def main(H, logger):
             ema.update_model_average(ema_sampler, sampler)
 
         images = None
-        if step % H.steps_per_display_output == 0 and step > 0:
+        if not H.no_display_output and step % H.steps_per_display_output == 0 and step > 0:
             images = get_samples(H, generator, ema_sampler if H.ema else sampler)
             logger.log(
                 {
                     f"{H.sampler}_samples": wandb.Image(images),
+                    "step": step,
                 }
             )
 
@@ -340,11 +341,11 @@ if __name__ == '__main__':
     parser.add_argument("--embd_pdrop", type=float)
     parser.add_argument("--greedy_epochs", type=int)
     parser.add_argument("--greedy", const=True, action="store_const", default=False)
-    parser.add_argument("--loss_type", type=str, choices=["reweighted_elbo", "elbo", "mlm"])
+    parser.add_argument("--loss_type", type=str)
     parser.add_argument("--mask_schedule", type=str)
     parser.add_argument("--resid_pdrop", type=float)
     parser.add_argument("--sample_block_size", type=int)
-    parser.add_argument("--sample_type", type=str, choices=["diffusion", "mlm"])
+    parser.add_argument("--sample_type", type=str, choices=["diffusion", "mlm", "maskgit"])
     parser.add_argument("--sampler", type=str, required=True, choices=["absorbing", "autoregressive"])
     parser.add_argument("--total_steps", type=int)
     parser.add_argument("--sample_steps", type=int)
@@ -355,6 +356,10 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--log_root", type=str, default="logs")
     parser.add_argument("--wandb_project", type=str, default="unleashing")
+    parser.add_argument("--no_display_output", action='store_true')
+    parser.add_argument("--time_schedule", type=str, default="uniform")
+    parser.add_argument("--sample_time_schedule", type=str, default="linear")
+    parser.add_argument("--sample_with_confidence", action="store_true", help="sample with confidence, for maskgit sampler")
 
     # Get sampler H from parser
     parser_args = parser.parse_args()

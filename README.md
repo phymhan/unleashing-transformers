@@ -99,6 +99,7 @@ After training the VQ model using the previous command, you'll be able to run th
 
 ```
 python3 train_sampler.py --sampler absorbing --dataset churches --log_dir absorbing_churches --ae_load_dir vqgan_churches --ae_load_step 2200000 --amp --ema
+python3 train_sampler2.py --sampler absorbing --dataset churches --log_dir absorbing_churches --ae_load_dir ../pretrained/logs/vqgan_churches --ae_load_step 2200000 --amp --ema
 ```
 
 The sampler needs to load the trained Vector-Quantized autoencoder in order to generate the latents it will use as for training (and validation). Latents are cached after the first time this is run to speed up training.

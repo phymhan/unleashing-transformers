@@ -24,6 +24,13 @@ def get_samples(H, generator, sampler):
     if H.sampler == "absorbing":
         if H.sample_type == "diffusion":
             latents = sampler.sample(sample_steps=H.sample_steps, temp=H.temp)
+        elif H.sample_type == "maskgit":
+            latents = sampler.sample_maskgit(
+                temp=H.temp,
+                sample_steps=H.sample_steps,
+                time_schedule=H.sample_time_schedule,
+                use_confidence=H.sample_with_confidence,
+            )
         else:
             latents = sampler.sample_mlm(temp=H.temp, sample_steps=H.sample_steps)
 

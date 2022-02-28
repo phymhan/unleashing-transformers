@@ -5,6 +5,8 @@ import torch.distributions as dists
 import torch.nn.functional as F
 from tqdm import tqdm
 from .sampler import Sampler
+import pdb
+st = pdb.set_trace
 
 
 class AbsorbingDiffusion(Sampler):
@@ -15,10 +17,12 @@ class AbsorbingDiffusion(Sampler):
         self.latent_emb_dim = H.emb_dim
         self.shape = tuple(H.latent_shape)
         self.num_timesteps = H.total_steps
+        # self.block_size = H.block_size
 
         self.mask_id = mask_id
         self._denoise_fn = denoise_fn
         self.n_samples = H.batch_size
+        self.time_schedule = H.time_schedule
         self.loss_type = H.loss_type
         self.mask_schedule = H.mask_schedule
         self.aux_weight = aux_weight
@@ -47,6 +51,60 @@ class AbsorbingDiffusion(Sampler):
             t = torch.randint(1, self.num_timesteps+1, (b,), device=device).long()  # inclusive [1, T]
             pt = torch.ones_like(t).float() / self.num_timesteps  # uniform 1/T
             return t, pt
+        
+        # ========== MaskGIT style training ==========
+        elif method == 'cosine':
+            r = torch.rand(b, device=device)  # [0, 1]
+            gamma_r = torch.cos(r * np.pi / 2)  # [0, 1]
+            t = torch.round(gamma_r * (self.num_timesteps - 1) + 1).long()
+            pr = torch.ones_like(t).float() / self.num_timesteps  # TODO: pt is not used for MaskGIT
+            return t, pr
+        
+        elif method == 'linear':
+            r = torch.rand(b, device=device)  # [0, 1]
+            gamma_r = 1 - r  # [0, 1]
+            t = torch.round(gamma_r * (self.num_timesteps - 1) + 1).long()
+            pr = torch.ones_like(t).float() / self.num_timesteps  # TODO: pt is not used for MaskGIT
+            return t, pr
+        
+        elif method == 'square':
+            r = torch.rand(b, device=device)  # [0, 1]
+            gamma_r = 1 - torch.pow(r, 2)  # [0, 1]
+            t = torch.round(gamma_r * (self.num_timesteps - 1) + 1).long()
+            pr = torch.ones_like(t).float() / self.num_timesteps  # TODO: pt is not used for MaskGIT
+            return t, pr
+        
+        elif method == 'cubic':
+            r = torch.rand(b, device=device)  # [0, 1]
+            gamma_r = 1 - torch.pow(r, 3)  # [0, 1]
+            t = torch.round(gamma_r * (self.num_timesteps - 1) + 1).long()
+            pr = torch.ones_like(t).float() / self.num_timesteps  # TODO: pt is not used for MaskGIT
+            return t, pr
+        
+        elif method == 'square_root':
+            r = torch.rand(b, device=device)  # [0, 1]
+            gamma_r = 1 - torch.sqrt(r)  # [0, 1]
+            t = torch.round(gamma_r * (self.num_timesteps - 1) + 1).long()
+            pr = torch.ones_like(t).float() / self.num_timesteps  # TODO: pt is not used for MaskGIT
+            return t, pr
+        
+        elif method == 'square_root_one_minus':
+            r = torch.rand(b, device=device)  # [0, 1]
+            gamma_r = torch.sqrt(1 - r)  # [0, 1]
+            t = torch.round(gamma_r * (self.num_timesteps - 1) + 1).long()
+            pr = torch.ones_like(t).float() / self.num_timesteps  # TODO: pt is not used for MaskGIT
+            return t, pr
+        
+        elif method.startswith('range_'):
+            lb = float(method[6:].split('_')[0])
+            ub = float(method[6:].split('_')[1])
+            r = torch.rand(b, device=device)  # [0, 1]
+            gamma_r = lb + (ub - lb) * r
+            t = torch.round(gamma_r * (self.num_timesteps - 1) + 1).long()
+            pr = torch.ones_like(t).float() / self.num_timesteps  # TODO: pt is not used for MaskGIT
+            return t, pr
+        
+        # ========== MaskGIT style training ==========
 
         else:
             raise ValueError
@@ -86,7 +144,7 @@ class AbsorbingDiffusion(Sampler):
         b, device = x_0.size(0), x_0.device
 
         # choose what time steps to compute loss at
-        t, pt = self.sample_time(b, device, 'uniform')
+        t, pt = self.sample_time(b, device, self.time_schedule)
 
         # make x noisy and denoise
 
@@ -111,6 +169,12 @@ class AbsorbingDiffusion(Sampler):
             loss = cross_entropy_loss / denom
         elif self.loss_type == 'reweighted_elbo':
             weight = (1 - (t / self.num_timesteps))
+            loss = weight * cross_entropy_loss
+            loss = loss / (math.log(2) * x_0.shape[1:].numel())
+        elif self.loss_type == 'simple':
+            loss = cross_entropy_loss / (math.log(2) * x_0.shape[1:].numel())
+        elif self.loss_type == 'reweighted_t':
+            weight = (t + 1) / self.num_timesteps
             loss = weight * cross_entropy_loss
             loss = loss / (math.log(2) * x_0.shape[1:].numel())
         else:
@@ -155,6 +219,62 @@ class AbsorbingDiffusion(Sampler):
                 logits=x_0_logits)
             x_0_hat = x_0_dist.sample().long()
             x_t[changes] = x_0_hat[changes]
+
+        return x_t
+    
+    def sample_maskgit(self, temp=1.0, sample_steps=None, time_schedule='linear', use_confidence=False):
+        def predict_from_logits(logits, argmax=False):
+            if argmax:
+                probabilities = F.softmax(logits, dim=-1)
+                probabilities, predictions = torch.max(probabilities, dim=-1)
+            else:
+                probabilities = F.softmax(logits, dim=-1)
+                x_dist = dists.Categorical(probs=probabilities)
+                predictions = x_dist.sample().long()
+                probabilities = torch.gather(probabilities, -1, predictions.unsqueeze(-1)).squeeze(-1)
+            return predictions, probabilities
+
+        b, device = self.n_samples, 'cuda'
+        T = sample_steps
+        N = np.prod(self.shape)
+        ts = np.arange(0, T + 1)
+        if time_schedule == 'linear':
+            ns = 1 - ts / T
+        elif time_schedule == 'cosine':
+            ns = np.cos(ts / T * np.pi / 2)
+        else:
+            raise NotImplementedError        
+        ns = np.round(ns * N)
+
+        x_t = torch.ones((b, N), device=device).long() * self.mask_id
+        unmasked = torch.zeros_like(x_t, device=device).bool()
+        one_probabilities = torch.ones((b, N), device=device) + 0.01
+
+        for t in range(T):
+            # predict x_0_hat from x_t
+            x_0_logits = self._denoise_fn(x_t, t=ns[t])
+            x_0_hat, x_0_prob = predict_from_logits(x_0_logits / temp)
+
+            if use_confidence:
+                confidences = torch.where(unmasked, one_probabilities, x_0_prob)
+            else:
+                random_probabilities = torch.rand(x_0_prob.shape, device=device)
+                confidences = torch.where(unmasked, one_probabilities, random_probabilities)
+            if t == T-1:
+                thresholds = 0
+            else:
+                thresholds = torch.topk(confidences, int(N - ns[t+1]), -1)[0][..., [-1]]
+
+            # where to unmask
+            changes = confidences >= thresholds  # changes (newly unmasked) are with high confidence
+            # don't unmask somewhere already unmasked
+            changes = torch.bitwise_xor(changes, torch.bitwise_and(changes, unmasked))
+
+            # update mask with changes
+            unmasked = torch.bitwise_or(unmasked, changes)
+            x_t[changes] = x_0_hat[changes]
+        
+        assert (x_t == self.mask_id).sum() == 0  # no mask_id in the sequence
 
         return x_t
 

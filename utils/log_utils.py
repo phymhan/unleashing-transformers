@@ -9,6 +9,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 import shutil
+import random
 import pdb
 st = pdb.set_trace
 
@@ -88,7 +89,7 @@ def save_images(images, im_name, step, log_dir, save_individually=False):
     else:
         torchvision.utils.save_image(
             torch.clamp(images, 0, 1),
-            f"{log_dir}/{im_name}_{step}.png",
+            f"{log_dir}/{im_name}_{step:07d}.png",
             nrow=int(np.sqrt(images.shape[0])),
             padding=0
         )

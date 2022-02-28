@@ -4,6 +4,7 @@ from .base import HparamsBase
 class HparamsAbsorbing(HparamsBase):
     def __init__(self, dataset):
 
+        self.time_schedule = "uniform"
         self.loss_type = "reweighted_elbo"
         self.sample_type = "diffusion"
         self.mask_schedule = "random"
