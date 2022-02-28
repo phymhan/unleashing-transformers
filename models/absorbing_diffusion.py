@@ -29,6 +29,7 @@ class AbsorbingDiffusion(Sampler):
         self.register_buffer('Lt_history', torch.zeros(self.num_timesteps+1))
         self.register_buffer('Lt_count', torch.zeros(self.num_timesteps+1))
         self.register_buffer('loss_history', torch.zeros(self.num_timesteps+1))
+        self.register_buffer('mce_history', torch.zeros(self.num_timesteps+1))  # mean cross entropy loss
 
         assert self.mask_schedule in ['random', 'fixed']
 
@@ -183,8 +184,15 @@ class AbsorbingDiffusion(Sampler):
         # Track loss at each time step history for bar plot
         Lt2_prev = self.loss_history.gather(dim=0, index=t)
         new_loss_history = (0.1 * loss + 0.9 * Lt2_prev).detach().to(self.loss_history.dtype)
-
         self.loss_history.scatter_(dim=0, index=t, src=new_loss_history)
+
+        # Track mean cross entropy loss at each time step history for bar plot
+        denom = mask.float().sum(1)
+        denom[denom == 0] = 1  # prevent divide by 0 errors.
+        mce_loss = cross_entropy_loss / denom
+        mce_prev = self.mce_history.gather(dim=0, index=t)
+        new_mce_history = (0.1 * mce_loss + 0.9 * mce_prev).detach().to(self.mce_history.dtype)
+        self.mce_history.scatter_(dim=0, index=t, src=new_mce_history)
 
         # Track loss at each time step for importance sampling
         Lt2 = vb_loss.detach().clone().pow(2)

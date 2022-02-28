@@ -191,7 +191,8 @@ def main(H, logger):
 
             if H.sampler == 'absorbing':
                 elbo = np.append(elbo, stats['vb_loss'].item())
-                data = [[label, val] for (label, val) in zip(list(range(sampler.loss_history.size(0))), sampler.loss_history)]
+                Lt_hist = sampler.mce_history
+                data = [[label, val] for (label, val) in zip(list(range(Lt_hist.size(0))), Lt_hist)]
                 table = wandb.Table(data=data, columns=["label", "value"])
                 logger.log(
                     {
