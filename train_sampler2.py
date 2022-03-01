@@ -361,6 +361,8 @@ if __name__ == '__main__':
     parser.add_argument("--time_schedule", type=str, default="uniform")
     parser.add_argument("--sample_time_schedule", type=str, default="linear")
     parser.add_argument("--sample_with_confidence", action="store_true", help="sample with confidence, for maskgit sampler")
+    parser.add_argument("--use_time_embedding", action="store_true")
+    parser.add_argument("--use_time_token", action="store_true")
 
     # Get sampler H from parser
     parser_args = parser.parse_args()

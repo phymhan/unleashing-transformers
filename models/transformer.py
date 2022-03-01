@@ -3,7 +3,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import pdb
+st = pdb.set_trace
 
 class CausalSelfAttention(nn.Module):
     """
@@ -115,6 +116,11 @@ class Transformer(nn.Module):
         self.ln_f = nn.LayerNorm(self.n_embd)
         self.head = nn.Linear(self.n_embd, self.codebook_size, bias=False)
 
+        if H.use_time_embedding:
+            self.time_emb = nn.Embedding(H.total_steps + 1, self.n_embd)
+        else:
+            self.time_emb = None
+
     def get_block_size(self):
         return self.block_size
 
@@ -137,13 +143,17 @@ class Transformer(nn.Module):
                 dim=1
             )
 
+        tt, t_emb = t, 0
+        if self.time_emb is not None:
+            t_emb = self.time_emb(tt)
+            t_emb = t_emb.unsqueeze(1)
         t = token_embeddings.shape[1]  # t is overwritten, to have the same interface as autoregressive sampler
         assert t <= self.block_size, "Cannot forward, model block size is exhausted."
         # each position maps to a (learnable) vector
 
         position_embeddings = self.pos_emb[:, :t, :]
 
-        x = token_embeddings + position_embeddings
+        x = token_embeddings + position_embeddings + t_emb
         x = self.drop(x)
         for block in self.blocks:
             x = block(x)

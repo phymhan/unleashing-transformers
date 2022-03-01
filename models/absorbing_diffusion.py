@@ -207,10 +207,11 @@ class AbsorbingDiffusion(Sampler):
         b, device = self.n_samples, 'cuda'
         x_t = torch.ones((b, np.prod(self.shape)), device=device).long() * self.mask_id
         unmasked = torch.zeros_like(x_t, device=device).bool()
+        ts_equiv = np.arange(1, sample_steps+1) * self.num_timesteps / sample_steps
         sample_steps = list(range(1, sample_steps+1))
-
-        for t in reversed(sample_steps):
-            print(f'Sample timestep {t:4d}', end='\r')
+        for t in reversed(sample_steps):  # T to 1
+            tt = torch.full((b,), ts_equiv[t-1], device=device, dtype=torch.long)
+            # print(f'Sample timestep {t:4d}', end='\r')
             t = torch.full((b,), t, device=device, dtype=torch.long)
 
             # where to unmask
@@ -220,11 +221,10 @@ class AbsorbingDiffusion(Sampler):
             # update mask with changes
             unmasked = torch.bitwise_or(unmasked, changes)
 
-            x_0_logits = self._denoise_fn(x_t, t=t)
+            x_0_logits = self._denoise_fn(x_t, t=tt)
             # scale by temperature
             x_0_logits = x_0_logits / temp
-            x_0_dist = dists.Categorical(
-                logits=x_0_logits)
+            x_0_dist = dists.Categorical(logits=x_0_logits)
             x_0_hat = x_0_dist.sample().long()
             x_t[changes] = x_0_hat[changes]
 
@@ -251,7 +251,8 @@ class AbsorbingDiffusion(Sampler):
         elif time_schedule == 'cosine':
             ns = np.cos(ts / T * np.pi / 2)
         else:
-            raise NotImplementedError        
+            raise NotImplementedError
+        ts_equiv = np.round(ns * self.num_timesteps)
         ns = np.round(ns * N)
 
         x_t = torch.ones((b, N), device=device).long() * self.mask_id
@@ -259,8 +260,9 @@ class AbsorbingDiffusion(Sampler):
         one_probabilities = torch.ones((b, N), device=device) + 0.01
 
         for t in range(T):
+            tt = torch.full((b,), ts_equiv[t], device=device, dtype=torch.long)
             # predict x_0_hat from x_t
-            x_0_logits = self._denoise_fn(x_t, t=ns[t])
+            x_0_logits = self._denoise_fn(x_t, t=tt)
             x_0_hat, x_0_prob = predict_from_logits(x_0_logits / temp)
 
             if use_confidence:
